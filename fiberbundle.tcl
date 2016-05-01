@@ -78,6 +78,12 @@ namespace eval ::fiberbundle {
 					$::bundle send_proxy $receiver $type $content
 				}
 
+				proc loop {script} {
+					while {1} {
+						uplevel 1 $script
+					}
+				}
+
 				$::bundle run_scheduler
 				thread::wait
 			} $bundle_id $master_thread_id [self]]]
@@ -148,7 +154,7 @@ namespace eval ::fiberbundle {
 		method spawn_test_fibers {n} {
 			for {set i 0} {$i < $n} {incr i} {
 				my spawn_fiber test_${i} {{} {
-					while {1} {
+					loop {
 						receive msg {
 							send logger info "I was sent a message from $msg(sender)!"
 						}

@@ -11,7 +11,7 @@ namespace eval ::fiberbundle::prelude {
 	#
 	proc logger {bundle_space} {
 		$bundle_space spawn_fiber logger {{} {
-			while {1} {
+			loop {
 				receive msg {
 					puts stdout "\[$msg(sender)\] ($msg(type)): $msg(content)"
 				}
