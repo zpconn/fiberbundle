@@ -70,6 +70,14 @@ namespace eval ::fiberbundle {
 					$::bundle receive_relayed_message $sender $receiver $type $content
 				}
 
+				proc receive {mvar script} {
+					$::bundle receive_proxy $mvar $script
+				}
+
+				proc send {receiver type content} {
+					$::bundle send_proxy $receiver $type $content
+				}
+
 				$::bundle run_scheduler
 				thread::wait
 			} $bundle_id $master_thread_id [self]]]
@@ -140,11 +148,12 @@ namespace eval ::fiberbundle {
 		method spawn_test_fibers {n} {
 			for {set i 0} {$i < $n} {incr i} {
 				my spawn_fiber test_${i} {{} {
-					    while {1} {
-					    	yield
-					    	puts stdout "hi"
+					while {1} {
+						receive msg {
+							send logger info "I was sent a message from $msg(sender)!"
 						}
-					}} 
+					}
+				}} 
 			}
 		}
 	}

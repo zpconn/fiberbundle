@@ -24,9 +24,9 @@ namespace eval ::fiberbundle::core {
 			variable mailbox [list]
 
 			#
-			# state - one of (RUN, WAIT, EXITING)
+			# state - one of (RUNNING, WAITING, EXITING)
 			#
-			variable state "RUN"
+			variable state "RUNNING"
 
 			#
 			# coroutine_name - the fully qualified name of the coroutine
@@ -47,9 +47,31 @@ namespace eval ::fiberbundle::core {
 			return $coroutine_name
 		}
 
+		method mailbox {} {
+			variable mailbox
+			return $mailbox
+		}
+
 		method append_to_mailbox {sender type content} {
 			variable mailbox
-			append mailbox [list $sender $type $content]
+			lappend mailbox [list $sender $type $content]
+		}
+
+		method pop_message {} {
+			variable mailbox
+			
+			if {[llength $mailbox] > 0} {
+				set message [lindex $mailbox 0]
+				set mailbox [lrange $mailbox 1 end]
+				return $message
+			}
+
+			return ""
+		}
+
+		method set_state {new_state} {
+			variable state
+			set state $new_state
 		}
 
 		method wakeup {} {
@@ -186,9 +208,21 @@ namespace eval ::fiberbundle::core {
 				# The receiver is remote, so we need to relay the message back to the
 				# master thread to handle the transfer.
 
-				thread::send -async $master_thread_id \
-					[list $bundle_space_name relay_message $sender $receiver $type $content]
+				set cmd [list $bundle_space_name relay_message $sender $receiver $type $content]
+				thread::send -async $master_thread_id $cmd
 			}
+		}
+
+		method send_proxy {receiver type content} {
+			variable coroutine_names
+
+			set current_coroutine [info coroutine]
+			if {$current_coroutine == ""} {
+				return
+			}
+
+			set sender_name $coroutine_names($current_coroutine)
+			my send_message $sender_name $receiver $type $content
 		}
 
 		#
@@ -205,6 +239,55 @@ namespace eval ::fiberbundle::core {
 			$fiber append_to_mailbox $sender $type $content
 			$fiber wakeup
 			dict set ready $receiver 1
+		}
+
+		#
+		# receive_proxy - a fiber in this bundle can invoke this function directly
+		# if it knows the identity of this bundle. Typically, the fiber's containing
+		# thread will contain a wrapper proc around this function which should be
+		# invoked instead.
+		#
+		# If the invoking fiber has a queued message in its mailbox, then this will 
+		# execute the provided script. If no message is queued, then this will cause
+		# the fiber to yield until a message is available.
+		#
+		method receive_proxy {mvar script} {
+			variable coroutine_names
+			variable fibers
+			variable ready
+
+			# Determine the identity of the invoking fiber.
+			set current_coroutine [info coroutine]
+
+			if {$current_coroutine == ""} {
+				# This has been invoked outside of a fiber, where it has no meaning.
+				return
+			}
+
+			set fiber_name $coroutine_names($current_coroutine)
+			set fiber $fibers($fiber_name)
+
+			while {1} {
+				set mail [$fiber mailbox]
+
+				if {[llength $mail] == 0} {
+					# There are no pending messages. Wait for one.
+					$fiber set_state WAITING
+					dict unset ready $fiber_name
+					yield
+				} else {
+					# There's a pending message. Invoke the provided script.
+					set message [$fiber pop_message]
+
+					upvar 1 $mvar shadow
+					set shadow(sender) [lindex $message 0]
+					set shadow(type) [lindex $message 1]
+					set shadow(content) [lindex $message 2]
+
+					$fiber set_state RUNNING
+					uplevel 1 $script
+				}
+			}
 		}
 	}
 }
