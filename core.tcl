@@ -279,13 +279,13 @@ namespace eval ::fiberbundle::core {
 					# There's a pending message. Invoke the provided script.
 					set message [$fiber pop_message]
 
-					upvar 1 $mvar shadow
+					upvar 2 $mvar shadow
 					set shadow(sender) [lindex $message 0]
 					set shadow(type) [lindex $message 1]
 					set shadow(content) [lindex $message 2]
 
 					$fiber set_state RUNNING
-					uplevel 1 $script
+					uplevel 2 $script
 				}
 			}
 		}
