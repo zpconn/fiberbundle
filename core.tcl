@@ -130,6 +130,11 @@ namespace eval ::fiberbundle::core {
 			variable bundle_space_name $_bundle_space_name
 		}
 
+		#
+		# spawn_fiber - spawns a new fiber as a coroutine in this bundle.
+		# The coroutine executes the provided lambda expression evaluated
+		# on any optional arguments supplied.
+		#
 		method spawn_fiber {name lambda args} {
 			variable fibers
 			variable bundle_id
@@ -242,43 +247,51 @@ namespace eval ::fiberbundle::core {
 		}
 
 		#
-		# receive_proxy - a fiber in this bundle can invoke this function directly
-		# if it knows the identity of this bundle. Typically, the fiber's containing
-		# thread will contain a wrapper proc around this function which should be
-		# invoked instead.
+		# current_fiber - determines the identity of the current fiber and returns
+		# its name.
 		#
-		# If the invoking fiber has a queued message in its mailbox, then this will 
-		# execute the provided script. If no message is queued, then this will cause
-		# the fiber to yield until a message is available.
+		# Returns the empty string if this has not been invoked from within a coroutine.
 		#
-		method receive_proxy {mvar script} {
+		method current_fiber {} {
 			variable coroutine_names
-			variable fibers
-			variable ready
 
-			# Determine the identity of the invoking fiber.
 			set current_coroutine [info coroutine]
 
 			if {$current_coroutine == ""} {
 				# This has been invoked outside of a fiber, where it has no meaning.
-				return
+				return ""
 			}
 
-			set fiber_name $coroutine_names($current_coroutine)
+			return $coroutine_names($current_coroutine)
+		}
+
+		#
+		# receive_proxy - if the invoking fiber has a queued message in its mailbox, then this will 
+		# execute the provided script. If no message is queued, then this will cause
+		# the fiber to yield until a message is available.
+		#
+		# If 'forever' is set to true, then this will yield repeatedly. If 'forever' is set to false,
+		# then this function will exit as soon as exactly one message has been received and
+		# processed.
+		#
+		method receive_proxy {mvar script {forever 1}} {
+			variable coroutine_names
+			variable fibers
+			variable ready
+
+			set fiber_name [my current_fiber]
 			set fiber $fibers($fiber_name)
 
 			while {1} {
-				set mail [$fiber mailbox]
+				set message [$fiber pop_message]
 
-				if {[llength $mail] == 0} {
+				if {$message == ""} {
 					# There are no pending messages. Wait for one.
 					$fiber set_state WAITING
 					dict unset ready $fiber_name
 					yield
 				} else {
 					# There's a pending message. Invoke the provided script.
-					set message [$fiber pop_message]
-
 					upvar 2 $mvar shadow
 					set shadow(sender) [lindex $message 0]
 					set shadow(type) [lindex $message 1]
@@ -286,6 +299,25 @@ namespace eval ::fiberbundle::core {
 
 					$fiber set_state RUNNING
 					uplevel 2 $script
+
+					if {!$forever} {
+						# Before breaking out of the loop again,
+						# we need to determine if there are any
+						# remaining messages.
+
+						set remaining_mail [$fiber mailbox]
+						if {[llength $remaining_mail] == 0} {
+							# We keep the state as RUNNING, since the
+							# fiber will continue to execute. However,
+							# we remove this fiber from the ready dict,
+							# since it has no pending messages and thus
+							# doesn't yet need to be rescheduled.
+
+							dict unset ready $fiber_name
+						}
+
+						break
+					}
 				}
 			}
 		}

@@ -17,6 +17,66 @@ package require fiberbundle-core
 #
 
 namespace eval ::fiberbundle {
+	#
+	# universe - a universe creates a thread to contain a bundle space and creates an external
+	# interface to said bundle space. The advantage is that the new thread can keep
+	# its event loop awake all the time by invoking thread::wait.
+	#
+	oo::class create universe {
+		constructor {} {
+			variable thread_id
+			set thread_id [my spawn_master_thread]
+		}
+
+		method spawn_master_thread {} {
+			return [thread::create {
+				package require fiberbundle
+				package require Thread
+				package require TclOO
+
+				set ::universe [::fiberbundle::bundle_space new]
+
+				proc spawn_bundles {n} {
+					$::universe spawn_bundles $n
+				}
+
+				proc spawn_fiber {name lambda args} {
+					$::universe spawn_fiber $name $lambda {*}$args
+				}
+
+				proc relay_message {sender receiver type {content {}}} {
+					$::universe relay_message $sender $receiver $type $content
+				}
+
+				proc spawn_test_fibers {n} {
+					$::universe spawn_test_fibers $n
+				}
+
+				thread::wait
+			}]
+		}
+
+		method spawn_bundles {n} {
+			variable thread_id
+			thread::send -async $thread_id [list spawn_bundles $n]
+		}
+
+		method spawn_fiber {name lambda args} {
+			variable thread_id
+			thread::send -async $thread_id [list spawn_fiber $name $lambda {*}$args]
+		}
+
+		method relay_message {sender receiver type {content {}}} {
+			variable thread_id
+			thread::send -async $thread_id [list relay_message $sender $receiver $type $content]
+		}
+
+		method spawn_test_fibers {n} {
+			variable thread_id
+			thread::send -async $thread_id [list spawn_test_fibers $n]
+		}
+	}
+
 	# 
 	# bundle_space - a bundle space is a collection of bundles, each of which exists
 	# in its own Tcl thread. A bundle space acts as an orchestrator for creating new
@@ -70,12 +130,16 @@ namespace eval ::fiberbundle {
 					$::bundle receive_relayed_message $sender $receiver $type $content
 				}
 
-				proc receive {mvar script} {
+				proc receive_forever {mvar script} {
 					$::bundle receive_proxy $mvar $script
 				}
 
-				proc send {receiver type content} {
-					$::bundle send_proxy $receiver $type $content
+				proc receive_once {mvar script} {
+					$::bundle receive_proxy $mvar $script 0
+				}
+
+				proc send {receiver type args} {
+					$::bundle send_proxy $receiver $type $args
 				}
 
 				proc loop {script} {
@@ -126,13 +190,6 @@ namespace eval ::fiberbundle {
 
 			# Bookkeeping.
 			set fibers($name) $bundle_id
-
-			#
-			# TODO:
-			#
-			# - Name conflicts.
-			# - Handle failure to create the fiber in the thread.
-			#
 		}
 
 		#
@@ -149,18 +206,6 @@ namespace eval ::fiberbundle {
 
 			# Send a message to the appropriate Tcl thread.
 			thread::send -async $thread_id [list receive_relayed_message $sender $receiver $type $content]
-		}
-
-		method spawn_test_fibers {n} {
-			for {set i 0} {$i < $n} {incr i} {
-				my spawn_fiber test_${i} {{} {
-					loop {
-						receive msg {
-							send logger info "I was sent a message from $msg(sender)!"
-						}
-					}
-				}} 
-			}
 		}
 	}
 }
