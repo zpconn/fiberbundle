@@ -4,6 +4,12 @@ package require Thread
 package require TclOO
 package require fiberbundle
 
+#
+# The fiberbundle prelude is a small standard library of utilies that will be useful
+# to mostly all applications built using fiberbundle but are nevertheless not
+# central to the library's implementation.
+#
+
 namespace eval ::fiberbundle::prelude {
 	#
 	# spawn_logger - spawns a fiber named 'logger' which will log

@@ -42,21 +42,34 @@ namespace eval ::fiberbundle::core {
 			variable bundle_id $_bundle_id
 		}
 
+		#
+		# coroutine_name - fetches the name of the coroutine which implements this fiber.
+		#
 		method coroutine_name {} {
 			variable coroutine_name
 			return $coroutine_name
 		}
 
+		#
+		# mailbox - fetches the entire mailbox of pending messages for this fiber.
+		#
 		method mailbox {} {
 			variable mailbox
 			return $mailbox
 		}
 
+		#
+		# append_to_mailbox - appends a message to the end of the mailbox queue.
+		#
 		method append_to_mailbox {sender type content} {
 			variable mailbox
 			lappend mailbox [list $sender $type $content]
 		}
 
+		#
+		# pop_message - removes the next message from this fiber's mailbox queue and
+		# returns it.
+		#
 		method pop_message {} {
 			variable mailbox
 			
@@ -69,11 +82,18 @@ namespace eval ::fiberbundle::core {
 			return ""
 		}
 
+		#
+		# set_state - sets the state of this fiber.
+		#
 		method set_state {new_state} {
 			variable state
 			set state $new_state
 		}
 
+		#
+		# wakeup - wakes up the scheduler so that any pending messages for this fiber
+		# might get processed.
+		#
 		method wakeup {} {
 			variable state
 			variable dispatcher_running
@@ -128,6 +148,12 @@ namespace eval ::fiberbundle::core {
 			# which this bundle belongs to.
 			#
 			variable bundle_space_name $_bundle_space_name
+
+			#
+			# scheduler_invocations - counts the number of times the scheduler has been
+			# invoked. This is used to prevent nested schedulers from existing.
+			#
+			variable scheduler_invocations 0
 		}
 
 		#
@@ -157,12 +183,22 @@ namespace eval ::fiberbundle::core {
 		# blocked or have no more work to do. Then it sleeps until it's
 		# woken up again.
 		#
-		# For simplicity, one should never invoke this function directly
-		# outside of this library's implementation.
+		# By design, the scheduler should only ever be invoked a single
+		# time. In general, it should never be manually invoked by a user
+		# of fiberbundle.
 		#
 		method run_scheduler {} {
 			variable fibers
 			variable ready
+			variable scheduler_invocations
+
+			incr scheduler_invocations
+			if {$scheduler_invocations > 1} {
+				# This should never be invoked more than once per bundle/thread.
+				# It is always an error to do so, as the scheduler once invoked
+				# is designed to run forever.
+				return
+			}
 
 			set ::fiberbundle::core::dispatcher_running 1
 
@@ -182,6 +218,27 @@ namespace eval ::fiberbundle::core {
 
 				set ::fiberbundle::core::dispatcher_running 0
 				vwait ::fiberbundle::core::dispatcher_running
+			}
+		}
+
+		#
+		# create_callback - this creates a callback function in a special namespace
+		# in the Tcl thread containing this bundle. When the callback is invoked,
+		# it sends a message with its arguments to the specified recipient fiber.
+		#
+		# The sender of the message is marked as the name of the callback function. Note
+		# that this is a minor abuse since the callback technically does not exist
+		# in a fiber.
+		#
+		# The type of the message is marked as 'callback'.
+		#
+		method create_callback {name receiver} {
+			set bundle_obj [self object]
+
+			namespace eval ::fiberbundle::callbacks {
+				proc $name {args} {
+					$bundle_obj send_message $name $receiver callback {*}$args
+				}
 			}
 		}
 
@@ -218,6 +275,11 @@ namespace eval ::fiberbundle::core {
 			}
 		}
 
+		#
+		# send_proxy - this acts as a proxy to send_message. When invoked by a fiber, this falls back
+		# to send_message to send a message from the invoking fiber to the specified recipient.
+		# The identity of the sender is automatically deduced.
+		#
 		method send_proxy {receiver type content} {
 			variable coroutine_names
 
@@ -301,9 +363,8 @@ namespace eval ::fiberbundle::core {
 					uplevel 2 $script
 
 					if {!$forever} {
-						# Before breaking out of the loop again,
-						# we need to determine if there are any
-						# remaining messages.
+						# Before breaking out of the loop, we need to
+						# determine if there are any remaining messages.
 
 						set remaining_mail [$fiber mailbox]
 						if {[llength $remaining_mail] == 0} {

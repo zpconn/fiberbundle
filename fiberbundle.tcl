@@ -52,6 +52,10 @@ namespace eval ::fiberbundle {
 					$::universe spawn_test_fibers $n
 				}
 
+				proc inflate {fallbackCount} {
+					$::universe inflate $fallbackCount
+				}
+
 				thread::wait
 			}]
 		}
@@ -71,9 +75,9 @@ namespace eval ::fiberbundle {
 			thread::send -async $thread_id [list relay_message $sender $receiver $type $content]
 		}
 
-		method spawn_test_fibers {n} {
+		method inflate {{fallbackCount 32}} {
 			variable thread_id
-			thread::send -async $thread_id [list spawn_test_fibers $n]
+			thread::send -async $thread_id [list inflate $fallbackCount]
 		}
 	}
 
@@ -162,12 +166,40 @@ namespace eval ::fiberbundle {
 		# spawn_bundles - spawns multiple bundles, each in a new thread. 
 		#
 		method spawn_bundles {n} {
-			if {$n <= 0} {
-				return
+			for {set i 0} {$i < $n} {incr i} {
+				my spawn_bundle
+			}
+		}
+
+		#
+		# num_cpus - attempts to automatically detect the number of available
+		# CPU cores. This currently only officially supports FreeBSD.
+		#
+		# Returns -1 on failure.
+		#
+		method num_cpus {} {
+			if {![catch {exec sysctl -n "hw.ncpu"} cores]} {
+				if {[string is integer -strict $cores] && \
+			        $cores >= 1} {
+					return $cores
+				}
 			}
 
-			my spawn_bundle
-			tailcall my spawn_bundles [expr {$n - 1}]
+			return -1
+		}
+
+		#
+		# inflate - spawns one bundle per available CPU core. If the number of cores
+		# can't be detected automatically, then this uses the provided default number
+		# of bundles to spawn.
+		#
+		method inflate {{fallback_count 32}} {
+			set num_cores [my num_cpus]
+			if {$num_cores <= 0} {
+				set num_cores $fallback_count
+			}
+
+			my spawn_bundles $num_cores
 		}
 
 		#
