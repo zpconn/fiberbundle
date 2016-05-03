@@ -118,6 +118,8 @@ namespace eval ::fiberbundle {
 			set master_thread_id [thread::id]
 			set thread_id [thread::create [format {
 				package require fiberbundle-core
+				package require fiberbundle-prelude
+
 				set ::bundle [::fiberbundle::core::bundle new %s %s %s]
 
 				namespace eval ::fiberbundle::coroutines {}
