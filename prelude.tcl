@@ -12,6 +12,16 @@ package require fiberbundle
 
 namespace eval ::fiberbundle::prelude {
 	#
+	# worker_unique_id - used for generating unique names for worker fibers created by
+	# map, etc.
+	#
+	set worker_unique_id 0
+
+	# TODO: These functions should be able to work without having a universe
+	# reference provided to them by using the new spawn_fiber function available
+	# in each bundle thread.
+
+	#
 	# spawn_logger - spawns a fiber named 'logger' which will log
 	# messages sent to it to stdout.
 	#
@@ -238,6 +248,70 @@ namespace eval ::fiberbundle::prelude {
 			}
 		}}
 	}
+
+	#
+	# next_worker_id - computes a new unique ID for worker fibers generated
+	# by map, etc.
+	#
+	proc next_worker_id {} {
+		variable worker_unique_id
+		incr worker_unique_id
+		return $worker_unique_id
+	}
+
+	#
+	# map - maps a lambda expression over a list of inputs, with the lambdas being
+	# evaluated in parallel in separate fibers. Note that each lambda expression can
+	# still communicate with other fibers (like agents offering shared state) and
+	# thus quite complex behavior can be produced here.
+	#
+	# This implementation is synchronous, meaning it waits for all computations
+	# to complete before returning. It returns a list of outputs, one output
+	# for each input.
+	#
+	proc map {name inputs lambda} {
+		set fiber_name [current_fiber]
+
+		# TODO: Remove the need to have a custom name for the worker thread collection.
+
+		# Spawn the workers.
+		set idx 0
+		foreach input $inputs {
+			spawn_fiber map_worker_${name}_[next_worker_id] {{lambda input target_fiber idx} {
+				set result [apply $lambda $input]
+				send $target_fiber worker_result $result $idx
+			}} $lambda $input $fiber_name $idx
+
+			incr idx
+		}
+
+		# Accumulate all the results from the workers. Note that they
+		# may come back to us in any order.
+		set output [dict create]
+		while {[dict size $output] < [llength $inputs]} {
+			receive_once msg {
+				switch $msg(type) {
+					worker_result {
+						lassign $msg(content) result idx
+						dict set output $idx $result
+					}
+
+					default {}
+				}
+			}
+		}
+
+		# Put the outputs in the desired order and return them.
+		set outputs [list]
+		for {set i 0} {$i < [llength $inputs]} {incr i} {
+			lappend outputs [dict get $output $i]
+		}
+
+		return $outputs
+	}
+
+	# TODO: Define an asynchronous promise object as a reference to an agent fiber whose state
+	# will be updated with the result of a computation occurring in a different fiber.
 }
 
 package provide fiberbundle-prelude 1.0

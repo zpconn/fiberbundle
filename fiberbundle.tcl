@@ -128,8 +128,20 @@ namespace eval ::fiberbundle {
 
 				namespace eval ::fiberbundle::coroutines {}
 
+				#
+				# spawn_local_fiber - spawns a fiber in *this* bundle.
+				#
 				proc spawn_local_fiber {name lambda args} {
 					$::bundle spawn_fiber $name $lambda {*}$args
+				}
+
+				#
+				# spawn_fiber - spawns a fiber in any bundle by communicating
+				# with the controlling bundle space.
+				#
+				proc spawn_fiber {name lambda args} {
+					thread::send -async [$::bundle master_thread_id] \
+						[list spawn_fiber $name $lambda {*}$args]
 				}
 
 				proc receive_relayed_message {sender receiver type content} {
@@ -146,6 +158,10 @@ namespace eval ::fiberbundle {
 
 				proc send {receiver type args} {
 					$::bundle send_proxy $receiver $type $args
+				}
+
+				proc current_fiber {} {
+					return [$::bundle current_fiber]
 				}
 
 				proc loop {script} {

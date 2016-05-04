@@ -157,6 +157,15 @@ namespace eval ::fiberbundle::core {
 		}
 
 		#
+		# master_thread_id - fetches the ID of the thread containing the bundle space which
+		# this bundle is a part of.
+		#
+		method master_thread_id {} {
+			variable master_thread_id
+			return $master_thread_id
+		}
+
+		#
 		# spawn_fiber - spawns a new fiber as a coroutine in this bundle.
 		# The coroutine executes the provided lambda expression evaluated
 		# on any optional arguments supplied.
@@ -335,6 +344,14 @@ namespace eval ::fiberbundle::core {
 		# If 'forever' is set to true, then this will yield repeatedly. If 'forever' is set to false,
 		# then this function will exit as soon as exactly one message has been received and
 		# processed.
+		#
+		# TODO: We need a way to skip certain message types without removing them from the
+		# fiber's mailbox.
+		#
+		# TODO: Let a fiber specify a whitelist of message types it's willing to accept.
+		#
+		# TODO: Let a fiber specify a whitelist of senders it's willing to receive messages
+		# from.
 		#
 		method receive_proxy {mvar script {forever 1}} {
 			variable coroutine_names
