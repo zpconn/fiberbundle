@@ -9,24 +9,17 @@ package require fiberbundle
 # to mostly all applications built using fiberbundle but are nevertheless not
 # central to the library's implementation.
 #
+# Note that mostly all the functions here are designed to be invoked from within
+# a fiber.
+#
 
 namespace eval ::fiberbundle::prelude {
-	#
-	# worker_unique_id - used for generating unique names for worker fibers created by
-	# map, etc.
-	#
-	set worker_unique_id 0
-
-	# TODO: These functions should be able to work without having a universe
-	# reference provided to them by using the new spawn_fiber function available
-	# in each bundle thread.
-
 	#
 	# spawn_logger - spawns a fiber named 'logger' which will log
 	# messages sent to it to stdout.
 	#
-	proc spawn_logger {universe logfile {batch 0}} {
-		$universe spawn_fiber logger {{out batch} {
+	proc spawn_logger {logfile {batch 0}} {
+		spawn_fiber logger {{out batch} {
 			set log [open $out a]
 			set counter 0
 
@@ -50,8 +43,8 @@ namespace eval ::fiberbundle::prelude {
 	# provides a simple but ready-to-go implementation of the basic agent
 	# commands (get/put/update).
 	#
-	proc spawn_simple_agent {universe name initial_state} {
-		$universe spawn_fiber $name {{start} {
+	proc spawn_simple_agent {name initial_state} {
+		spawn_fiber $name {{start} {
 			set state $start
 
 			receive_forever msg {
@@ -207,8 +200,8 @@ namespace eval ::fiberbundle::prelude {
 	#
 	# The resulting agent is compatible with the agent_put/agent_get interface.
 	#
-	proc spawn_agent {universe name agent_subclass}  {
-		$universe spawn_fiber $name {{} {
+	proc spawn_agent {name agent_subclass}  {
+		spawn_fiber $name {{} {
 			# Create the agent object.
 			set agent_obj [$agent_subclass new]
 
@@ -250,16 +243,6 @@ namespace eval ::fiberbundle::prelude {
 	}
 
 	#
-	# next_worker_id - computes a new unique ID for worker fibers generated
-	# by map, etc.
-	#
-	proc next_worker_id {} {
-		variable worker_unique_id
-		incr worker_unique_id
-		return $worker_unique_id
-	}
-
-	#
 	# map - maps a lambda expression over a list of inputs, with the lambdas being
 	# evaluated in parallel in separate fibers. Note that each lambda expression can
 	# still communicate with other fibers (like agents offering shared state) and
@@ -269,15 +252,13 @@ namespace eval ::fiberbundle::prelude {
 	# to complete before returning. It returns a list of outputs, one output
 	# for each input.
 	#
-	proc map {name inputs lambda} {
+	proc map {inputs lambda} {
 		set fiber_name [current_fiber]
-
-		# TODO: Remove the need to have a custom name for the worker thread collection.
 
 		# Spawn the workers.
 		set idx 0
 		foreach input $inputs {
-			spawn_fiber map_worker_${name}_[next_worker_id] {{lambda input target_fiber idx} {
+			spawn_fiber map_worker_[new_pid] {{lambda input target_fiber idx} {
 				set result [apply $lambda $input]
 				send $target_fiber worker_result $result $idx
 			}} $lambda $input $fiber_name $idx
@@ -308,6 +289,19 @@ namespace eval ::fiberbundle::prelude {
 		}
 
 		return $outputs
+	}
+
+	#
+	# map_reduce - simple MapReduce implementation which maps a lambda expression 
+	# over a set of inputs, then applies a reducer lambda expression to the set of
+	# outputs once acquired.
+	#
+	# Note that in this implementation the reduction stage is not executed until
+	# all individual output pieces have been received from the worker fibers.
+	#
+	proc map_reduce {inputs lambda reducer} {
+		set outputs [::fiberbundle::prelude::map $inputs $lambda]
+		return [apply $reducer $outputs]
 	}
 
 	# TODO: Define an asynchronous promise object as a reference to an agent fiber whose state

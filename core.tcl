@@ -154,6 +154,11 @@ namespace eval ::fiberbundle::core {
 			# invoked. This is used to prevent nested schedulers from existing.
 			#
 			variable scheduler_invocations 0
+
+			#
+			# next_pid - used for generating globally unique PIDs.
+			#
+			variable next_pid 0
 		}
 
 		#
@@ -163,6 +168,21 @@ namespace eval ::fiberbundle::core {
 		method master_thread_id {} {
 			variable master_thread_id
 			return $master_thread_id
+		}
+
+		#
+		# new_pid - generates a globally unique PID. This is guaranteed to be unique not just
+		# in this bundle but across all bundles, despite being generated without any inter-thread
+		# communication. The technique is simple: we just prepend this bundle's already unique ID
+		# to a strictly increasing integer.
+		#
+		method new_pid {} {
+			variable next_pid
+			variable bundle_id
+
+			set pid ${bundle_id}_${next_pid}
+			incr next_pid
+			return $pid
 		}
 
 		#

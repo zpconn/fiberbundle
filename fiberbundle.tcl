@@ -23,7 +23,10 @@ namespace eval ::fiberbundle {
 	# its event loop awake all the time by invoking thread::wait.
 	#
 	oo::class create universe {
-		constructor {} {
+		constructor {{_shared_code_buffer {}}} {
+			variable shared_code_buffer
+			set shared_code_buffer $_shared_code_buffer
+
 			variable thread_id
 			set thread_id [my spawn_master_thread]
 		}
@@ -34,26 +37,26 @@ namespace eval ::fiberbundle {
 				package require Thread
 				package require TclOO
 
-				set ::universe [::fiberbundle::bundle_space new]
+				set ::bundle_space [::fiberbundle::bundle_space new]
 
-				proc spawn_bundles {n} {
-					$::universe spawn_bundles $n
+				proc spawn_bundles {n shared_code_buffer} {
+					$::bundle_space spawn_bundles $n $shared_code_buffer
 				}
 
 				proc spawn_fiber {name lambda args} {
-					$::universe spawn_fiber $name $lambda {*}$args
+					$::bundle_space spawn_fiber $name $lambda {*}$args
 				}
 
 				proc relay_message {sender receiver type {content {}}} {
-					$::universe relay_message $sender $receiver $type $content
+					$::bundle_space relay_message $sender $receiver $type $content
 				}
 
 				proc spawn_test_fibers {n} {
-					$::universe spawn_test_fibers $n
+					$::bundle_space spawn_test_fibers $n
 				}
 
-				proc inflate {fallbackCount} {
-					$::universe inflate $fallbackCount
+				proc inflate {shared_code_buffer fallback_count} {
+					$::bundle_space inflate $shared_code_buffer $fallback_count
 				}
 
 				thread::wait
@@ -62,7 +65,9 @@ namespace eval ::fiberbundle {
 
 		method spawn_bundles {n} {
 			variable thread_id
-			thread::send -async $thread_id [list spawn_bundles $n]
+			variable shared_code_buffer
+
+			thread::send -async $thread_id [list spawn_bundles $n $shared_code_buffer]
 		}
 
 		method spawn_fiber {name lambda args} {
@@ -75,9 +80,11 @@ namespace eval ::fiberbundle {
 			thread::send -async $thread_id [list relay_message $sender $receiver $type $content]
 		}
 
-		method inflate {{fallbackCount 32}} {
+		method inflate {{fallback_count 32}} {
 			variable thread_id
-			thread::send -async $thread_id [list inflate $fallbackCount]
+			variable shared_code_buffer
+
+			thread::send -async $thread_id [list inflate $shared_code_buffer $fallback_count]
 		}
 	}
 
@@ -112,7 +119,7 @@ namespace eval ::fiberbundle {
 		#
 		# Returns a tuple (a list of two elements) with the bundle ID and thread ID.
 		#
-		method spawn_bundle {} {
+		method spawn_bundle {shared_code_buffer} {
 			variable bundles
 			variable next_unique_bundle_id
 
@@ -127,6 +134,11 @@ namespace eval ::fiberbundle {
 				set ::bundle [::fiberbundle::core::bundle new %s %s %s]
 
 				namespace eval ::fiberbundle::coroutines {}
+
+				set shared_code_buffer %s
+				if {$shared_code_buffer != {}} {
+					eval $shared_code_buffer
+				}
 
 				#
 				# spawn_local_fiber - spawns a fiber in *this* bundle.
@@ -164,15 +176,25 @@ namespace eval ::fiberbundle {
 					return [$::bundle current_fiber]
 				}
 
+				proc new_pid {} {
+					return [$::bundle new_pid]
+				}
+
 				proc loop {script} {
 					while {1} {
 						uplevel 1 $script
 					}
 				}
 
+				proc wait_forever {} {
+					receive_forever msg {
+						default {}
+					}
+				}
+
 				$::bundle run_scheduler
 				thread::wait
-			} $bundle_id $master_thread_id [self]]]
+			} $bundle_id $master_thread_id [self] "\{$shared_code_buffer\}"]]
 
 			set bundles($bundle_id) $thread_id
 			return [list $bundle_id $thread_id]
@@ -181,9 +203,9 @@ namespace eval ::fiberbundle {
 		#
 		# spawn_bundles - spawns multiple bundles, each in a new thread. 
 		#
-		method spawn_bundles {n} {
+		method spawn_bundles {n shared_code_buffer} {
 			for {set i 0} {$i < $n} {incr i} {
-				my spawn_bundle
+				my spawn_bundle $shared_code_buffer
 			}
 		}
 
@@ -209,13 +231,13 @@ namespace eval ::fiberbundle {
 		# can't be detected automatically, then this uses the provided default number
 		# of bundles to spawn.
 		#
-		method inflate {{fallback_count 32}} {
+		method inflate {shared_code_buffer fallback_count} {
 			set num_cores [my num_cpus]
 			if {$num_cores <= 0} {
 				set num_cores $fallback_count
 			}
 
-			my spawn_bundles $num_cores
+			my spawn_bundles $num_cores $shared_code_buffer
 		}
 
 		#
