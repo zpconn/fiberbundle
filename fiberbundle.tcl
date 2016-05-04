@@ -160,12 +160,14 @@ namespace eval ::fiberbundle {
 					$::bundle receive_relayed_message $sender $receiver $type $content
 				}
 
-				proc receive_forever {mvar script} {
-					$::bundle receive_proxy $mvar $script
+				proc receive_forever {mvar script {opts {}}} {
+					dict set opts forever 1
+					$::bundle receive_proxy $mvar $script $opts
 				}
 
-				proc receive_once {mvar script} {
-					$::bundle receive_proxy $mvar $script 0
+				proc receive_once {mvar script {opts {}}} {
+					dict set opts forever 0
+					$::bundle receive_proxy $mvar $script $opts
 				}
 
 				proc send {receiver type args} {

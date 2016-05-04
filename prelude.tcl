@@ -105,7 +105,7 @@ namespace eval ::fiberbundle::prelude {
 					send logger error "agent_get received a response other than get_response!"
 				}
 			}
-		}
+		} [dict create sender_whitelist [list $name]]
 	}
 
 	#
@@ -133,7 +133,7 @@ namespace eval ::fiberbundle::prelude {
 					return 0
 				}
 			}
-		}
+		} [dict create sender_whitelist [list $name]]
 	}
 
 	#
@@ -161,7 +161,7 @@ namespace eval ::fiberbundle::prelude {
 					return 0
 				}
 			}
-		}
+		} [dict create sender_whitelist [list $name]]
 	}
 
 	#
@@ -257,8 +257,11 @@ namespace eval ::fiberbundle::prelude {
 
 		# Spawn the workers.
 		set idx 0
+		set worker_fibers [list]
 		foreach input $inputs {
-			spawn_fiber map_worker_[new_pid] {{lambda input target_fiber idx} {
+			set worker_name map_worker_[new_pid]
+			lappend worker_fibers $worker_name
+			spawn_fiber $worker_name {{lambda input target_fiber idx} {
 				set result [apply $lambda $input]
 				send $target_fiber worker_result $result $idx
 			}} $lambda $input $fiber_name $idx
@@ -279,7 +282,7 @@ namespace eval ::fiberbundle::prelude {
 
 					default {}
 				}
-			}
+			} [dict create sender_whitelist $worker_fibers]
 		}
 
 		# Put the outputs in the desired order and return them.
