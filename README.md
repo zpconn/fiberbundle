@@ -23,3 +23,49 @@ Planned features:
 3. Support for monitoring fibers.
 4. Better support for channels.
 
+Here's an example of a rather silly and intentionally inefficient script that shows how easily the library can consume all available CPU resources (it achieves >3000% CPU usage on my machine):
+
+```tcl
+package require fiberbundle
+package require fiberbundle-prelude
+
+# Any procs defined here will be available in any fiber and in any thread.
+set shared_code_buffer {
+	proc fib {n} {
+		if {$n <= 1} {
+			return 1
+		}
+
+		return [expr {[fib [expr {$n-1}]] + [fib [expr {$n-2}]]}]
+	}
+}
+
+# The universe oversees all the different threads behind the scenes.
+set ::universe [::fiberbundle::universe new $shared_code_buffer]
+
+# Inflation causes the universe to create one thread and one bundle per
+# available CPU core.
+$::universe inflate
+
+# To create a fiber and run it, we just need to supply a name and a lambda
+# expression for it to execute.
+$::universe spawn_fiber main {{} {
+	# Create an asynchronous logger which writes to a file.
+	::fiberbundle::prelude::spawn_logger test.log
+
+	set inputs [list]
+	set range 100
+	for {set i 0} {$i < $range} {incr i} {
+		lappend inputs $i
+	}
+
+    # Waste as many CPU cores as possible computing Fibonacci numbers.
+	set lambda {{x} { return [fib $x] }}
+	send logger info "Starting map!"
+	set outputs [::fiberbundle::prelude::map $inputs $lambda]
+	send logger info "Output: $outputs"
+
+	wait_forever
+}}
+```
+
