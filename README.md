@@ -73,3 +73,29 @@ $::universe spawn_fiber main {{} {
 }}
 ```
 
+The prelude supports agent fibers for the creation and management of state. An agent fiber is a fiber whose sole purpose is to hold some state. Other fibers can concurrently retrieve or modify the state by sending messages to the agent. The prelude has some functions that make such communication simpler, hiding its asynchronous aspect from the user if desired. A trivial example:
+
+```tcl
+# This should be inside a fiber.
+
+# Creates a stateful agent fiber named `counter`.
+::fiberbundle::prelude::spawn_simple_agent counter 1
+
+# Updates the state in the `counter` agent from 1 to 2.
+# agent_put is synchronous and waits for a success signal
+# from the agent before proceeding.
+::fiberbundle::prelude::agent_put counter 2
+
+# Agent state can also be modified using a lambda expression.
+::fiberbundle::prelude::agent_update counter {{x} { return [expr {$x * $x}] }}
+
+# Communicates with the agent fiber via messages to retrieve
+# its state. Like agent_put, agent_get converts asynchronous
+# communication into a function that blocks until a result
+# is obtained.
+set count [::fiberbundle::prelude::agent_get counter]
+send logger info "The current count is $count!"
+```
+
+The advantage of agents is that they provide shared state that is easily accessible from any fiber using simple message passing semantics.
+
