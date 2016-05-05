@@ -60,6 +60,10 @@ $::universe spawn_fiber main {{} {
 	}
 
     # Waste as many CPU cores as possible computing Fibonacci numbers.
+    # Note that the standard map function used here performs the computations in parallel
+    # in multiple fibers, but it blocks the current fiber until all the calculations
+    # complete and return results.
+
 	set lambda {{x} { return [fib $x] }}
 	send logger info "Starting map!"
 	set outputs [::fiberbundle::prelude::map $inputs $lambda]
