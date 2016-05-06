@@ -171,6 +171,10 @@ namespace eval ::fiberbundle {
 				}
 
 				proc send {receiver type args} {
+					if {[llength $args] == 1} {
+						set args [lindex $args 0]
+					}
+
 					$::bundle send_proxy $receiver $type $args
 				}
 

@@ -104,6 +104,7 @@ namespace eval ::fiberbundle::core {
 
 				# We've found the first message that passes the provided whitelists.
 				set delete_idx $idx
+				break
 			}
 
 			if {$delete_idx >= 0} {
@@ -274,6 +275,12 @@ namespace eval ::fiberbundle::core {
 						set fiber $fibers($fiber_name)
 						[$fiber coroutine_name]
 					}
+
+					# It's necessary in some circumstances to explicitly
+					# call update here. Examples include extremely high throughput
+					# or a fiber which accrues a mailbox that grows without bound.
+
+					update
 				}
 
 				# At this point all fibers are blocked. Relinquish control
@@ -298,11 +305,11 @@ namespace eval ::fiberbundle::core {
 		method create_callback {name receiver} {
 			set bundle_obj [self object]
 
-			namespace eval ::fiberbundle::callbacks {
-				proc $name {args} {
-					$bundle_obj send_message $name $receiver callback {*}$args
+			namespace eval ::fiberbundle::callbacks [format {
+				proc %s {args} {
+					%s send_message %s %s callback {*}$args
 				}
-			}
+			} $name $bundle_obj $name $receiver]
 		}
 
 		#
@@ -468,6 +475,12 @@ namespace eval ::fiberbundle::core {
 						}
 
 						break
+					} else {
+						# We yield before continuing to make sure
+						# other fibers get a chance to run even if
+						# this one has built up a large queue.
+
+						yield
 					}
 				}
 			}

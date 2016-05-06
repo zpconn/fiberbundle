@@ -102,10 +102,10 @@ namespace eval ::fiberbundle::prelude {
 				}
 				
 				default {
-					send logger error "agent_get received a response other than get_response!"
+					send logger error "agent_get received a response other than get_response ([array get msg])!"
 				}
 			}
-		} [dict create sender_whitelist [list $name]]
+		} [dict create sender_whitelist [list $name] type_whitelist [list get_response]]
 	}
 
 	#
@@ -133,7 +133,7 @@ namespace eval ::fiberbundle::prelude {
 					return 0
 				}
 			}
-		} [dict create sender_whitelist [list $name]]
+		} [dict create sender_whitelist [list $name] type_whitelist [list put_response]]
 	}
 
 	#
@@ -161,7 +161,7 @@ namespace eval ::fiberbundle::prelude {
 					return 0
 				}
 			}
-		} [dict create sender_whitelist [list $name]]
+		} [dict create sender_whitelist [list $name] type_whitelist [list update_response]]
 	}
 
 	#
