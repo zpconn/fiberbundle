@@ -82,15 +82,17 @@ namespace eval ::fiberbundle::core {
 		}
 
 		#
-		# pop_message - removes the next message from this fiber's mailbox queue and
+		# pop_messages - removes the next message from this fiber's mailbox queue and
 		# returns it.
 		#
 		# Applies type and sender whitelists if desired.
 		#
-		method pop_message {enforce_type_whitelist type_whitelist enforce_sender_whitelist sender_whitelist} {
+		method pop_messages {enforce_type_whitelist type_whitelist enforce_sender_whitelist sender_whitelist {batch 1}} {
 			variable mailbox
 
-			set delete_idx -1
+			set delete_indices [list]
+			set messages [list]
+
 			for {set idx 0} {$idx < [llength $mailbox]} {incr idx} {
 				set message [lindex $mailbox $idx]
 
@@ -102,19 +104,28 @@ namespace eval ::fiberbundle::core {
 					continue
 				}
 
-				# We've found the first message that passes the provided whitelists.
-				set delete_idx $idx
-				break
+				# We've found a message that passes the provided whitelists.
+				lappend delete_indices $idx
+				lappend messages $message
+
+				if {[llength $delete_indices] == $batch} {
+					# No need to go on.
+					break
+				}
 			}
 
-			if {$delete_idx >= 0} {
-				set message [lindex $mailbox $delete_idx]
-				set mailbox [concat [lrange $mailbox 0 [expr {$delete_idx-1}]] \
-					                [lrange $mailbox [expr {$delete_idx+1}] end]]
-				return $message
+			if {[llength $delete_indices] == 0} {
+				return ""
 			}
 
-			return ""
+			set j 0
+			foreach idx $delete_indices {
+				set k [expr {$idx - $j}]
+				set mailbox [lreplace $mailbox $k $k]
+				incr j
+			}
+
+			return $messages
 		}
 
 		#
@@ -417,8 +428,6 @@ namespace eval ::fiberbundle::core {
 				set forever [dict get $opts forever]
 			}
 
-			# TODO: enforce_* are unnecessary.
-
 			set enforce_type_whitelist 0
 			set type_whitelist [list]
 			if {[dict exists $opts type_whitelist]} {
@@ -433,13 +442,19 @@ namespace eval ::fiberbundle::core {
 				set enforce_sender_whitelist 1
 			}
 
+			set batch 1
+			if {[dict exists $opts batch]} {
+				set batch [dict get $opts batch]
+			}
+
 			# Initiate the yield loop.
 
 			while {1} {
-				set message [$fiber pop_message $enforce_type_whitelist $type_whitelist \
-					                            $enforce_sender_whitelist $sender_whitelist]
+				set messages [$fiber pop_messages $enforce_type_whitelist $type_whitelist \
+					                            $enforce_sender_whitelist $sender_whitelist \
+					                            $batch]
 
-				if {$message == ""} {
+				if {[llength $messages] == 0} {
 					# There are no pending messages that pass the desired whitelists.
 					# Wait for one.
 
@@ -450,20 +465,22 @@ namespace eval ::fiberbundle::core {
 					# There's a pending message that passes the provided whitelists.
 					# Invoke the provided script.
 
-					upvar 2 $mvar shadow
-					set shadow(sender) [lindex $message 0]
-					set shadow(type) [lindex $message 1]
-					set shadow(content) [lindex $message 2]
+					foreach message $messages {
+						upvar 2 $mvar shadow
+						set shadow(sender) [lindex $message 0]
+						set shadow(type) [lindex $message 1]
+						set shadow(content) [lindex $message 2]
 
-					$fiber set_state RUNNING
-					uplevel 2 $script
+						$fiber set_state RUNNING
+						uplevel 2 $script
+					}
 
 					if {!$forever} {
 						# Before breaking out of the loop, we need to
 						# determine if there are any remaining messages.
 
 						set remaining_mail [$fiber mailbox $enforce_type_whitelist $type_whitelist \
-							                               $enforce_sender_whitelist $sender_whitelist]
+														   $enforce_sender_whitelist $sender_whitelist]
 						if {[llength $remaining_mail] == 0} {
 							# We keep the state as RUNNING, since the
 							# fiber will continue to execute. However,
