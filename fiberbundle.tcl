@@ -47,6 +47,10 @@ namespace eval ::fiberbundle {
 					$::bundle_space spawn_fiber $name $lambda {*}$args
 				}
 
+				proc spawn_fiber_in_specific_bundle {name lambda bundle_id args} {
+					$::bundle_space spawn_fiber_in_specific_bundle $name $lambda $bundle_id {*}$args
+				}
+
 				proc relay_message {sender receiver type {content {}}} {
 					$::bundle_space relay_message $sender $receiver $type $content
 				}
@@ -156,16 +160,23 @@ namespace eval ::fiberbundle {
 						[list spawn_fiber $name $lambda {*}$args]
 				}
 
+				proc spawn_fiber_in_specific_bundle {name lambda bundle_id args} {
+					thread::send -async [$::bundle master_thread_id] \
+						[list spawn_fiber_in_specific_bundle $name $lambda $bundle_id {*}$args]
+				}
+
 				proc receive_relayed_message {sender receiver type content} {
 					$::bundle receive_relayed_message $sender $receiver $type $content
 				}
 
 				proc receive_forever {mvar script {opts {}}} {
+					puts "executing receive_forever!"
 					dict set opts forever 1
 					$::bundle receive_proxy $mvar $script $opts
 				}
 
 				proc receive_once {mvar script {opts {}}} {
+					puts "executing receive_once!"
 					dict set opts forever 0
 					$::bundle receive_proxy $mvar $script $opts
 				}
@@ -267,6 +278,25 @@ namespace eval ::fiberbundle {
 			thread::send -async $thread_id [list spawn_local_fiber $name $lambda {*}$args]
 
 			# Bookkeeping.
+			set fibers($name) $bundle_id
+		}
+
+		#
+		# spawn_fiber_in_specific_bundle - spawns a new fiber in the bundle specified
+		# by the provided bundle ID.
+		#
+		# Generally this should be used sparingly, but it makes sense to use if you know
+		# that two fibers are going to be communicating via messages with very high
+		# throughput. Making sure they're in the same bundle eliminates the need for every
+		# such message to be routed through different threads and thus can be a pretty
+		# big performance boost.
+		#
+		method spawn_fiber_in_specific_bundle {name lambda bundle_id args} {
+			variable bundles
+			variable fibers
+
+			set thread_id $bundles($bundle_id)
+			thread::send -async $thread_id [list spawn_local_fiber $name $lambda {*}$args]
 			set fibers($name) $bundle_id
 		}
 

@@ -82,10 +82,10 @@ namespace eval ::fiberbundle::core {
 		}
 
 		#
-		# pop_messages - removes the next message from this fiber's mailbox queue and
-		# returns it.
+		# pop_messages - finds and removes messages from this fiber's mailbox which satisfy the provided whitelists.
 		#
-		# Applies type and sender whitelists if desired.
+		# By default, this finds only the first relevant message. However, if batch exceeds 1, then this returns up
+		# to `batch` messages as a list.
 		#
 		method pop_messages {enforce_type_whitelist type_whitelist enforce_sender_whitelist sender_whitelist {batch 1}} {
 			variable mailbox
@@ -115,7 +115,7 @@ namespace eval ::fiberbundle::core {
 			}
 
 			if {[llength $delete_indices] == 0} {
-				return ""
+				return [list]
 			}
 
 			set j 0
@@ -266,6 +266,7 @@ namespace eval ::fiberbundle::core {
 			variable fibers
 			variable ready
 			variable scheduler_invocations
+			variable bundle_id
 
 			incr scheduler_invocations
 			if {$scheduler_invocations > 1} {
@@ -335,6 +336,7 @@ namespace eval ::fiberbundle::core {
 			variable ready
 			variable master_thread_id
 			variable bundle_space_name
+			variable bundle_id
 
 			# The sender is always local to this bundle. However, the receiver
 			# may not be.
@@ -345,8 +347,8 @@ namespace eval ::fiberbundle::core {
 
 				set fiber $fibers($receiver)
 				$fiber append_to_mailbox $sender $type $content
-				$fiber wakeup
 				dict set ready $receiver 1
+				$fiber wakeup
 			} else {
 				# The receiver is remote, so we need to relay the message back to the
 				# master thread to handle the transfer.
@@ -451,8 +453,8 @@ namespace eval ::fiberbundle::core {
 
 			while {1} {
 				set messages [$fiber pop_messages $enforce_type_whitelist $type_whitelist \
-					                            $enforce_sender_whitelist $sender_whitelist \
-					                            $batch]
+					                              $enforce_sender_whitelist $sender_whitelist \
+					                              $batch]
 
 				if {[llength $messages] == 0} {
 					# There are no pending messages that pass the desired whitelists.
@@ -481,6 +483,7 @@ namespace eval ::fiberbundle::core {
 
 						set remaining_mail [$fiber mailbox $enforce_type_whitelist $type_whitelist \
 														   $enforce_sender_whitelist $sender_whitelist]
+
 						if {[llength $remaining_mail] == 0} {
 							# We keep the state as RUNNING, since the
 							# fiber will continue to execute. However,

@@ -306,9 +306,6 @@ namespace eval ::fiberbundle::prelude {
 		set outputs [::fiberbundle::prelude::map $inputs $lambda]
 		return [apply $reducer $outputs]
 	}
-
-	# TODO: Define an asynchronous promise object as a reference to an agent fiber whose state
-	# will be updated with the result of a computation occurring in a different fiber.
 }
 
 package provide fiberbundle-prelude 1.0
