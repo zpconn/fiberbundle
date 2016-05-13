@@ -51,6 +51,16 @@ namespace eval ::fiberbundle::core {
 		}
 
 		#
+		# has_remaining_mail - returns true or false according to whether this fiber has
+		# any remaining messages in its mailbox. This does *not* apply any whitelists
+		# or filters.
+		#
+		method has_remaining_mail {} {
+			variable mailbox
+			return [expr {[llength $mailbox] > 0 ? 1 : 0}]
+		}
+
+		#
 		# mailbox - fetches the entire mailbox of pending messages for this fiber.
 		# Applies type and sender whitelists if desired.
 		#
@@ -480,11 +490,14 @@ namespace eval ::fiberbundle::core {
 					if {!$forever} {
 						# Before breaking out of the loop, we need to
 						# determine if there are any remaining messages.
+						
+						# We don't apply whitelists here since we need to
+						# support nested receive loops. Even if there are
+						# no messages that pass the whitelists from this receive
+						# loop, this loop might itself be in another receive
+						# loop which will be able to receive some of the messages.
 
-						set remaining_mail [$fiber mailbox $enforce_type_whitelist $type_whitelist \
-														   $enforce_sender_whitelist $sender_whitelist]
-
-						if {[llength $remaining_mail] == 0} {
+						if {![$fiber has_remaining_mail]} {
 							# We keep the state as RUNNING, since the
 							# fiber will continue to execute. However,
 							# we remove this fiber from the ready dict,

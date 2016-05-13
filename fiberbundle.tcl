@@ -170,13 +170,11 @@ namespace eval ::fiberbundle {
 				}
 
 				proc receive_forever {mvar script {opts {}}} {
-					puts "executing receive_forever!"
 					dict set opts forever 1
 					$::bundle receive_proxy $mvar $script $opts
 				}
 
 				proc receive_once {mvar script {opts {}}} {
-					puts "executing receive_once!"
 					dict set opts forever 0
 					$::bundle receive_proxy $mvar $script $opts
 				}
