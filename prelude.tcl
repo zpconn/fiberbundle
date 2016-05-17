@@ -74,9 +74,20 @@ namespace eval ::fiberbundle::prelude {
 						set state [apply $update_lambda $state]
 					}
 
+					update_closure {
+						set update_closure $msg(content)
+						set state [apply {*}$update_closure $state]
+					}
+
 					update_with_response {
 						set update_lambda $msg(content)
 						set state [apply $update_lambda $state]
+						send $msg(sender) update_response success
+					}
+
+					update_closure_with_response {
+						set update_closure $msg(content)
+						set state [apply {*}$update_closure $state]
 						send $msg(sender) update_response success
 					}
 
@@ -137,6 +148,18 @@ namespace eval ::fiberbundle::prelude {
 	}
 
 	#
+	# async_agent_put - asynchronously sends a `put` message to the specified agent.
+	#
+	# Does not wait for a response of any kind and does not instruct the agent
+	# to send a response. 
+	#
+	# Returns immediately.
+	#
+	proc async_agent_put {name value} {
+		send $name put $value
+	}
+
+	#
 	# agent_update - given the name of an agent and an update lambda expression, this sends
 	# an update command to the agent and blocks until it receives a response indicating
 	# success.
@@ -162,6 +185,30 @@ namespace eval ::fiberbundle::prelude {
 				}
 			}
 		} [dict create sender_whitelist [list $name] type_whitelist [list update_response]]
+	}
+
+	#
+	# async_agent_update - asynchronously sends an `update` message to the specified agent.
+	#
+	# Does not wait for a response of any kind and does not instruct the agent to
+	# send a response.
+	#
+	# Returns immediately.
+	#
+	proc async_agent_update {name lambda} {
+		send $name update $lambda
+	}
+
+	#
+	# async_agent_update_closure - asynchronously sends an `update_closure` message to the specified agent.
+	#
+	# Does not wait for a response of any kind and does not instruct the agent
+	# to send a response.
+	#
+	# Returns immediately.
+	#
+	proc async_agent_update_closure {name closure} {
+		send $name update_closure $closure
 	}
 
 	#
@@ -305,6 +352,41 @@ namespace eval ::fiberbundle::prelude {
 	proc map_reduce {inputs lambda reducer} {
 		set outputs [::fiberbundle::prelude::map $inputs $lambda]
 		return [apply $reducer $outputs]
+	}
+
+	#
+	# closure - creates a lambda expression which is able to reference variables 
+	# contained in its enclosing lexical scope as if it were a closure.
+	#
+	# Note that this can be very inefficient if the enclosing scope is large, as
+	# it makes copies of all the variables.
+	#
+	# The lambda expression can be evaluated via `apply`.
+	#
+	proc closure {arguments body} {
+		set vars [lmap v [uplevel 1 info vars] {
+			if {[uplevel 1 [list info exist $v]] && \
+				![uplevel 1 [list array exists $v]]} {
+				set v
+			} else {
+				continue
+			}
+		}]
+
+		return [list \
+					[list [list {*}$vars {*}$arguments] $body] \
+					{*}[lmap v $vars {uplevel 1 [list set $v]}]]
+	}
+
+	#
+	# fast_closure - this version of `closure` can often be considerably faster
+	# because it will only create copies of the variables specified in the
+	# `refs` list.
+	#
+	proc fast_closure {refs arguments body} {
+		return [list \
+					[list [list {*}$refs {*}$arguments] $body] \
+					{*}[lmap v $refs {uplevel 1 [list set $v]}]]
 	}
 }
 

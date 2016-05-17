@@ -242,6 +242,23 @@ namespace eval ::fiberbundle::core {
 		}
 
 		#
+		# mark_fiber_ready - given a fiber name, this forcibly places the fiber into the scheduler's
+		# ready queue, which by default only contains fibers with pending messages.
+		#
+		method mark_fiber_ready {fiber_name} {
+			variable ready
+			dict set ready $fiber_name 1
+		}
+
+		#
+		# mark_current_fiber_ready - forcibly places the current fiber into the scheduler's
+		# ready queue.
+		#
+		method mark_current_fiber_ready {} {
+			my mark_fiber_ready [my current_fiber]
+		}
+
+		#
 		# spawn_fiber - spawns a new fiber as a coroutine in this bundle.
 		# The coroutine executes the provided lambda expression evaluated
 		# on any optional arguments supplied.
@@ -299,8 +316,11 @@ namespace eval ::fiberbundle::core {
 					}
 
 					# It's necessary in some circumstances to explicitly
-					# call update here. Examples include extremely high throughput
-					# or a fiber which accrues a mailbox that grows without bound.
+					# call update here. This happens primarily when the ready
+					# dict is never fully empty and thus we never reach the
+					# vwait below. We must allow the Tcl event loop to have
+					# some time, e.g., so we can receive messages from other 
+					# thread sent via thread::send -async.
 
 					update
 				}

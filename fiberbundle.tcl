@@ -195,16 +195,54 @@ namespace eval ::fiberbundle {
 					return [$::bundle new_pid]
 				}
 
+				#
+				# loop - a helper function which invokes the provided script
+				# repeatedly in an infinite loop.
+				#
 				proc loop {script} {
 					while {1} {
 						uplevel 1 $script
 					}
 				}
 
+				#
+				# wait_forever - causes the invoking fiber to simply wait forever
+				# without ever exiting. It will no longer be able to respond to
+				# messages, and its execution will never proceed beyond the call
+				# to this function.
+				#
 				proc wait_forever {} {
-					receive_forever msg {
-						default {}
+					# We can efficiently wait forever by repeatedly yielding.
+					#
+					# After the first yield, this fiber will never be woken up
+					# again by the scheduler unless it receives a message. Thus
+					# this is a lot more efficient than doing something like 
+					# invoking `receive_forever` with empty whitelists, since
+					# `receive` is a somewhat expensive operation, especially with
+					# whitelists provided.
+					while {1} {
+						yield
 					}
+				}
+
+				#
+				# yield_alive - this should be used to temporarily suspend a long-running
+				# computation in a fiber which is not waiting on any messages.
+				#
+				# By default, the scheduler will only ever resume fibers that have
+				# yielded and have pending messages. This yields the current fiber but
+				# also tells the scheduler that this fiber should still be resumed
+				# again in the future even if it has no pending messages.
+				#
+				proc yield_alive {} {
+					# We want to yield the current coroutine, but we want to
+					# keep the scheduler alive and make sure that this coroutine
+					# will be executed again as soon as possible after the rest
+					# have been given some time.
+
+					$::bundle mark_current_fiber_ready
+					set ::fiberbundle::core::dispatcher_running 1
+					yield
 				}
 
 				$::bundle run_scheduler
