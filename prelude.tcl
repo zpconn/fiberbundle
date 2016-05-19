@@ -342,19 +342,6 @@ namespace eval ::fiberbundle::prelude {
 	}
 
 	#
-	# map_reduce - simple MapReduce implementation which maps a lambda expression 
-	# over a set of inputs, then applies a reducer lambda expression to the set of
-	# outputs once acquired.
-	#
-	# Note that in this implementation the reduction stage is not executed until
-	# all individual output pieces have been received from the worker fibers.
-	#
-	proc map_reduce {inputs lambda reducer} {
-		set outputs [::fiberbundle::prelude::map $inputs $lambda]
-		return [apply $reducer $outputs]
-	}
-
-	#
 	# closure - creates a lambda expression which is able to reference variables 
 	# contained in its enclosing lexical scope as if it were a closure.
 	#
